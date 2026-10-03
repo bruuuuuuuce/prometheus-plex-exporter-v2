@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -21,6 +22,38 @@ type TimelineEntry struct {
 	Title         string `json:"title"`
 	Type          int64  `json:"type"`
 	UpdatedAt     int64  `json:"updatedAt"`
+}
+
+// UnmarshalJSON accepts both numeric and numeric-string section IDs. Plex sends
+// both forms. Invalid IDs are left at zero so unrelated playing data in the
+// same notification is not dropped.
+// Keep this compatibility fix when updating the vendored Plex client.
+func (e *TimelineEntry) UnmarshalJSON(data []byte) error {
+	type plainTimelineEntry TimelineEntry
+	var decoded struct {
+		*plainTimelineEntry
+		SectionID json.RawMessage `json:"sectionID"`
+	}
+	decoded.plainTimelineEntry = new(plainTimelineEntry)
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+
+	if len(decoded.SectionID) != 0 && string(decoded.SectionID) != "null" {
+		if decoded.SectionID[0] == '"' {
+			var value string
+			if err := json.Unmarshal(decoded.SectionID, &value); err == nil {
+				if sectionID, err := strconv.ParseInt(value, 10, 64); err == nil {
+					decoded.plainTimelineEntry.SectionID = sectionID
+				}
+			}
+		} else {
+			_ = json.Unmarshal(decoded.SectionID, &decoded.plainTimelineEntry.SectionID)
+		}
+	}
+
+	*e = TimelineEntry(*decoded.plainTimelineEntry)
+	return nil
 }
 
 // ActivityNotification ...
