@@ -70,7 +70,7 @@ func (s *Server) Listen(ctx context.Context, log log.Logger) error {
 	events.OnPlaying(s.listener.onPlayingHandler)
 
 	// TODO - Does this automatically reconnect on websocket failure?
-	conn.SubscribeToNotifications(events, ctrlC, onError)
+	conn.SubscribeToNotificationsWithLogger(events, ctrlC, onError, log)
 	select { // SubscribeToNotifications doesn't return error directly, so we read one from channel without blocking.
 	case err = <-doneChan:
 		return err
@@ -95,7 +95,7 @@ func getSessionByID(sessions plex.CurrentSessions, sessionID string) *plex.Metad
 func (l *plexListener) onPlayingHandler(c plex.NotificationContainer) {
 	err := l.onPlaying(c)
 	if err != nil {
-		level.Error(l.log).Log("msg", "error handling OnPlaying event", "event", c, "err", err)
+		level.Error(l.log).Log("msg", "error handling OnPlaying event", "eventType", c.Type, "err", err)
 	}
 }
 

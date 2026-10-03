@@ -2,13 +2,14 @@ package plex
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"time"
 
+	kitlog "github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gorilla/websocket"
 )
 
@@ -208,6 +209,16 @@ func (e *NotificationEvents) OnTranscodeUpdate(fn func(n NotificationContainer))
 
 // SubscribeToNotifications connects to your server via websockets listening for events
 func (p *Plex) SubscribeToNotifications(events *NotificationEvents, interrupt <-chan os.Signal, fn func(error)) {
+	p.SubscribeToNotificationsWithLogger(events, interrupt, fn, defaultNotificationLogger())
+}
+
+// SubscribeToNotificationsWithLogger connects to your server via websockets and
+// writes diagnostics through logger so callers can control their level.
+func (p *Plex) SubscribeToNotificationsWithLogger(events *NotificationEvents, interrupt <-chan os.Signal, fn func(error), logger kitlog.Logger) {
+	if logger == nil {
+		logger = defaultNotificationLogger()
+	}
+
 	plexURL, err := url.Parse(p.URL)
 
 	if err != nil {
@@ -243,7 +254,6 @@ func (p *Plex) SubscribeToNotifications(events *NotificationEvents, interrupt <-
 			_, message, err := c.ReadMessage()
 
 			if err != nil {
-				fmt.Println("read:", err)
 				fn(err)
 				return
 			}
@@ -253,7 +263,7 @@ func (p *Plex) SubscribeToNotifications(events *NotificationEvents, interrupt <-
 			var notif WebsocketNotification
 
 			if err := json.Unmarshal(message, &notif); err != nil {
-				fmt.Printf("convert message to json failed: %v\n", err)
+				level.Warn(logger).Log("msg", "failed to decode Plex websocket notification", "err", err)
 				continue
 			}
 
@@ -261,7 +271,7 @@ func (p *Plex) SubscribeToNotifications(events *NotificationEvents, interrupt <-
 			fn, ok := events.events[notif.Type]
 
 			if !ok {
-				fmt.Printf("unknown websocket event name: %v\n", notif.Type)
+				level.Debug(logger).Log("msg", "unknown websocket event name", "event", notif.Type)
 				continue
 			}
 
@@ -282,24 +292,29 @@ func (p *Plex) SubscribeToNotifications(events *NotificationEvents, interrupt <-
 					fn(err)
 				}
 			case <-interrupt:
-				fmt.Println("interrupt")
+				level.Debug(logger).Log("msg", "closing Plex websocket connection")
 				// To cleanly close a connection, a client should send a close
 				// frame and wait for the server to close the connection.
 				err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 
 				if err != nil {
-					fmt.Println("write close:", err)
 					fn(err)
 				}
 
 				select {
 				case <-done:
 				case <-time.After(time.Second):
-					fmt.Println("closing websocket...")
+					level.Debug(logger).Log("msg", "Plex websocket close timed out; forcing connection closed")
 					c.Close()
 				}
 				return
 			}
 		}
 	}()
+}
+
+func defaultNotificationLogger() kitlog.Logger {
+	logger := kitlog.NewLogfmtLogger(kitlog.NewSyncWriter(os.Stderr))
+	filteredLogger := level.NewFilter(logger, level.AllowInfo())
+	return level.NewInjector(filteredLogger, level.InfoValue())
 }
