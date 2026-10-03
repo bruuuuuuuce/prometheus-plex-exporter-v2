@@ -41,6 +41,8 @@ A sample dashboard can be found in the [examples](examples/dashboards/Media%20Se
 
 # Exporting Metrics
 
+Correcting the library labels on `plays_total` and `play_seconds_total` changes the identity of affected time series. After upgrading, Prometheus will store new samples under the corrected label values; historical samples remain under their previous values until they expire by retention.
+
 The simplest way to start visualizaing your metrics is with the Free Forever [Grafana Cloud](https://grafana.com/docs/grafana-cloud/) and [Grafana Agent](https://grafana.com/docs/agent/latest/).
 
 Here's an example config file that will read metrics from the exporter and ship them to [Prometheus](https://grafana.com/docs/grafana-cloud/data-configuration/metrics/metrics-prometheus/) via `remote_write`:
