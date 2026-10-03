@@ -26,6 +26,13 @@ var (
 )
 
 func main() {
+	configuredLogger, err := newLogger(os.Getenv("LOG_LEVEL"), os.Stderr)
+	if err != nil {
+		level.Error(log).Log("msg", "cannot configure logger", "error", err)
+		os.Exit(1)
+	}
+	log = configuredLogger
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 

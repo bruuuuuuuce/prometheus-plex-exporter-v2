@@ -4,10 +4,11 @@ Expose library playback, storage, and host metrics in a Prometheus format.
 
 # Configuration
 
-The exporter is configured via required environment variables:
+Configure the exporter with these environment variables:
 
 - `PLEX_SERVER`: The full URL where your server can be reached, including the scheme and port (if not 80 or 443). For example `http://192.168.0.10:32400` or `https://my.plex.tld`.
 - `PLEX_TOKEN`: A [Plex token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/) belonging to the server administrator. 
+- `LOG_LEVEL` (optional): Minimum log level: `debug`, `info`, `warn`, or `error`. Defaults to `info`.
 
 # Running
 
@@ -19,6 +20,7 @@ docker run \
   -p 9000:9000 \
   -e PLEX_SERVER="<Your Plex server URL>" \
   -e PLEX_TOKEN="<Your Plex server admin token>" \
+  -e LOG_LEVEL="info" \
   ghcr.io/jsclayton/prometheus-plex-exporter
 ```
 
@@ -32,6 +34,7 @@ prom-plex-exporter:
   environment:
     PLEX_SERVER: <Your Plex server URL>
     PLEX_TOKEN: <Your Plex server admin token>
+    LOG_LEVEL: info
 ```
 
 A sample dashboard can be found in the [examples](examples/dashboards/Media%20Server.json)
