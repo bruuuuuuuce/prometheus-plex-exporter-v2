@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	kitlog "github.com/go-kit/log"
@@ -193,6 +194,12 @@ func NewNotificationEvents() *NotificationEvents {
 			"update.statechange":        func(n NotificationContainer) {},
 			"activity":                  func(n NotificationContainer) {},
 			"backgroundProcessingQueue": func(n NotificationContainer) {},
+			// These observed Plex events are unrelated to playback metrics. Keep
+			// them recognized (and intentionally unhandled) to avoid treating
+			// routine server notifications as unknown events.
+			"progress":                func(n NotificationContainer) {},
+			"status":                  func(n NotificationContainer) {},
+			"provider.content.change": func(n NotificationContainer) {},
 		},
 	}
 }
@@ -268,10 +275,13 @@ func (p *Plex) SubscribeToNotificationsWithLogger(events *NotificationEvents, in
 			}
 
 			// fmt.Println(notif.Type)
-			fn, ok := events.events[notif.Type]
+			// Some Plex versions / intermediaries may include surrounding
+			// whitespace in the type value. Normalize only the dispatch key.
+			eventType := strings.TrimSpace(notif.Type)
+			fn, ok := events.events[eventType]
 
 			if !ok {
-				level.Debug(logger).Log("msg", "unknown websocket event name", "event", notif.Type)
+				level.Debug(logger).Log("msg", "unknown websocket event name", "event", eventType)
 				continue
 			}
 
