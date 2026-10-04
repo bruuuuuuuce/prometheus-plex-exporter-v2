@@ -18,6 +18,8 @@ The text `&#x20;` is the HTML numeric character reference for a space (U+0020). 
 
 # Running
 
+Building the exporter from source requires Go 1.25 or newer.
+
 The exporter runs via Docker:
 
 ```bash

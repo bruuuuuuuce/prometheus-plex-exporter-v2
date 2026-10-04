@@ -19,7 +19,7 @@ This file applies to the entire repository. Keep changes small, reviewable, and 
 
 ## Code and verification
 
-- This is a Go 1.23 project. The application entry point is `cmd/prometheus-plex-exporter`; Plex integration is in `pkg/plex`, and metric definitions are in `pkg/metrics`.
+- This is a Go 1.25 project. The application entry point is `cmd/prometheus-plex-exporter`; Plex integration is in `pkg/plex`, and metric definitions are in `pkg/metrics`.
 - Keep Go code formatted with `gofmt`. Run `go test -mod=vendor ./...` and `go build -mod=vendor -o /dev/null ./cmd/prometheus-plex-exporter` for code changes. Run any narrower checks needed for the affected behavior.
 - Add a regression test when fixing a bug or changing observable behavior. Tests should check outcomes, such as decoded events or emitted metric labels, rather than only mirror implementation details.
 - Dependencies are vendored. Make dependency updates deliberately, including `go.mod`, `go.sum`, and `vendor/` together. Avoid unexplained edits inside `vendor/`.
