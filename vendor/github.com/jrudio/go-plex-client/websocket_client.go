@@ -2,15 +2,12 @@ package plex
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
-	kitlog "github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/gorilla/websocket"
 )
 
@@ -24,38 +21,6 @@ type TimelineEntry struct {
 	Title         string `json:"title"`
 	Type          int64  `json:"type"`
 	UpdatedAt     int64  `json:"updatedAt"`
-}
-
-// UnmarshalJSON accepts both numeric and numeric-string section IDs. Plex sends
-// both forms. Invalid IDs are left at zero so unrelated playing data in the
-// same notification is not dropped.
-// Keep this compatibility fix when updating the vendored Plex client.
-func (e *TimelineEntry) UnmarshalJSON(data []byte) error {
-	type plainTimelineEntry TimelineEntry
-	var decoded struct {
-		*plainTimelineEntry
-		SectionID json.RawMessage `json:"sectionID"`
-	}
-	decoded.plainTimelineEntry = new(plainTimelineEntry)
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return err
-	}
-
-	if len(decoded.SectionID) != 0 && string(decoded.SectionID) != "null" {
-		if decoded.SectionID[0] == '"' {
-			var value string
-			if err := json.Unmarshal(decoded.SectionID, &value); err == nil {
-				if sectionID, err := strconv.ParseInt(value, 10, 64); err == nil {
-					decoded.plainTimelineEntry.SectionID = sectionID
-				}
-			}
-		} else {
-			_ = json.Unmarshal(decoded.SectionID, &decoded.plainTimelineEntry.SectionID)
-		}
-	}
-
-	*e = TimelineEntry(*decoded.plainTimelineEntry)
-	return nil
 }
 
 // ActivityNotification ...
@@ -194,12 +159,6 @@ func NewNotificationEvents() *NotificationEvents {
 			"update.statechange":        func(n NotificationContainer) {},
 			"activity":                  func(n NotificationContainer) {},
 			"backgroundProcessingQueue": func(n NotificationContainer) {},
-			// These observed Plex events are unrelated to playback metrics. Keep
-			// them recognized (and intentionally unhandled) to avoid treating
-			// routine server notifications as unknown events.
-			"progress":                func(n NotificationContainer) {},
-			"status":                  func(n NotificationContainer) {},
-			"provider.content.change": func(n NotificationContainer) {},
 		},
 	}
 }
@@ -216,16 +175,6 @@ func (e *NotificationEvents) OnTranscodeUpdate(fn func(n NotificationContainer))
 
 // SubscribeToNotifications connects to your server via websockets listening for events
 func (p *Plex) SubscribeToNotifications(events *NotificationEvents, interrupt <-chan os.Signal, fn func(error)) {
-	p.SubscribeToNotificationsWithLogger(events, interrupt, fn, defaultNotificationLogger())
-}
-
-// SubscribeToNotificationsWithLogger connects to your server via websockets and
-// writes diagnostics through logger so callers can control their level.
-func (p *Plex) SubscribeToNotificationsWithLogger(events *NotificationEvents, interrupt <-chan os.Signal, fn func(error), logger kitlog.Logger) {
-	if logger == nil {
-		logger = defaultNotificationLogger()
-	}
-
 	plexURL, err := url.Parse(p.URL)
 
 	if err != nil {
@@ -261,6 +210,7 @@ func (p *Plex) SubscribeToNotificationsWithLogger(events *NotificationEvents, in
 			_, message, err := c.ReadMessage()
 
 			if err != nil {
+				fmt.Println("read:", err)
 				fn(err)
 				return
 			}
@@ -270,18 +220,15 @@ func (p *Plex) SubscribeToNotificationsWithLogger(events *NotificationEvents, in
 			var notif WebsocketNotification
 
 			if err := json.Unmarshal(message, &notif); err != nil {
-				level.Warn(logger).Log("msg", "failed to decode Plex websocket notification", "err", err)
+				fmt.Printf("convert message to json failed: %v\n", err)
 				continue
 			}
 
 			// fmt.Println(notif.Type)
-			// Some Plex versions / intermediaries may include surrounding
-			// whitespace in the type value. Normalize only the dispatch key.
-			eventType := strings.TrimSpace(notif.Type)
-			fn, ok := events.events[eventType]
+			fn, ok := events.events[notif.Type]
 
 			if !ok {
-				level.Debug(logger).Log("msg", "unknown websocket event name", "event", eventType)
+				fmt.Printf("unknown websocket event name: %v\n", notif.Type)
 				continue
 			}
 
@@ -302,29 +249,24 @@ func (p *Plex) SubscribeToNotificationsWithLogger(events *NotificationEvents, in
 					fn(err)
 				}
 			case <-interrupt:
-				level.Debug(logger).Log("msg", "closing Plex websocket connection")
+				fmt.Println("interrupt")
 				// To cleanly close a connection, a client should send a close
 				// frame and wait for the server to close the connection.
 				err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 
 				if err != nil {
+					fmt.Println("write close:", err)
 					fn(err)
 				}
 
 				select {
 				case <-done:
 				case <-time.After(time.Second):
-					level.Debug(logger).Log("msg", "Plex websocket close timed out; forcing connection closed")
+					fmt.Println("closing websocket...")
 					c.Close()
 				}
 				return
 			}
 		}
 	}()
-}
-
-func defaultNotificationLogger() kitlog.Logger {
-	logger := kitlog.NewLogfmtLogger(kitlog.NewSyncWriter(os.Stderr))
-	filteredLogger := level.NewFilter(logger, level.AllowInfo())
-	return level.NewInjector(filteredLogger, level.InfoValue())
 }
