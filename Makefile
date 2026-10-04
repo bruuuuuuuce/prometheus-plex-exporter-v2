@@ -7,8 +7,6 @@ GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
-GOPATH := $(shell go env GOPATH)
-
 GO_OPT= -mod vendor -ldflags "-X main.Branch=$(GIT_BRANCH) -X main.Revision=$(GIT_REVISION) -X main.Version=$(VERSION)"
 
 DOCKER_NAMESPACE ?= bruuuuuuuce
@@ -32,8 +30,8 @@ exe:
 ### Docker Images
 
 .PHONY: docker-component # Not intended to be used directly
-docker-component: check-component exe
-	docker build -t $(DOCKER_NAMESPACE)/$(COMPONENT):$(VERSION) -f ./cmd/$(COMPONENT)/Dockerfile .
+docker-component: check-component
+	docker build --platform=linux/$(GOARCH) -t $(DOCKER_NAMESPACE)/$(COMPONENT):$(VERSION) -f ./cmd/$(COMPONENT)/Dockerfile .
 	docker tag $(DOCKER_NAMESPACE)/$(COMPONENT):$(VERSION) $(COMPONENT):latest
 
 .PHONY: docker-prometheus-plex-exporter
