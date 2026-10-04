@@ -11,6 +11,8 @@ GOPATH := $(shell go env GOPATH)
 
 GO_OPT= -mod vendor -ldflags "-X main.Branch=$(GIT_BRANCH) -X main.Revision=$(GIT_REVISION) -X main.Version=$(VERSION)"
 
+DOCKER_NAMESPACE ?= bruuuuuuuce
+
 ### Development
 
 .PHONY: run
@@ -31,10 +33,8 @@ exe:
 
 .PHONY: docker-component # Not intended to be used directly
 docker-component: check-component exe
-	docker build -t jsclayton/$(COMPONENT) --build-arg=TARGETARCH=$(GOARCH) -f ./cmd/$(COMPONENT)/Dockerfile .
-	docker tag jsclayton/$(COMPONENT) $(COMPONENT)
-	docker tag jsclayton/$(COMPONENT) ghcr.io/jsclayton/$(COMPONENT):latest
-	docker tag jsclayton/$(COMPONENT) ghcr.io/jsclayton/$(COMPONENT):main
+	docker build -t $(DOCKER_NAMESPACE)/$(COMPONENT):$(VERSION) -f ./cmd/$(COMPONENT)/Dockerfile .
+	docker tag $(DOCKER_NAMESPACE)/$(COMPONENT):$(VERSION) $(COMPONENT):latest
 
 .PHONY: docker-prometheus-plex-exporter
 docker-prometheus-plex-exporter:
