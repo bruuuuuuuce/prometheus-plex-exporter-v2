@@ -22,19 +22,19 @@ The exporter runs via Docker:
 
 ```bash
 docker run \
-  -name prom-plex-exporter \
+  --name prom-plex-exporter \
   -p 9000:9000 \
   -e PLEX_SERVER="<Your Plex server URL>" \
   -e PLEX_TOKEN="<Your Plex server admin token>" \
   -e LOG_LEVEL="info" \
-  ghcr.io/jsclayton/prometheus-plex-exporter
+  bruuuuuuuce/prometheus-plex-exporter:latest
 ```
 
 Or via Docker Compose:
 
 ```yaml
 prom-plex-exporter:
-  image: ghcr.io/jsclayton/prometheus-plex-exporter
+  image: bruuuuuuuce/prometheus-plex-exporter:latest
   ports:
     - 9000:9000/tcp
   environment:
@@ -42,6 +42,12 @@ prom-plex-exporter:
     PLEX_TOKEN: <Your Plex server admin token>
     LOG_LEVEL: info
 ```
+
+The maintained image is published to [Docker Hub](https://hub.docker.com/r/bruuuuuuuce/prometheus-plex-exporter) for `linux/amd64` and `linux/arm64`. Images are built by this repository's [publish workflow](.github/workflows/publish.yml): every commit to `main` publishes `main` and an immutable `sha-<commit>` tag, while a Git tag such as `v1.2.3` publishes `v1.2.3` and advances `latest`. Pull requests never publish images.
+
+For reproducible deployments, pin a release tag (or image digest) instead of `latest`. To migrate from the former `ghcr.io/jsclayton/prometheus-plex-exporter` image, replace only the image reference; `PLEX_SERVER`, `PLEX_TOKEN`, `LOG_LEVEL`, port `9000`, and the `/metrics` endpoint are unchanged. To roll back, restore the previously deployed release tag or digest and redeploy.
+
+Maintainers must configure the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` GitHub Actions secrets. `DOCKERHUB_TOKEN` should be a Docker Hub access token with permission to push `bruuuuuuuce/prometheus-plex-exporter`. Create a GitHub release tag matching `v*` only after CI passes on `main`; the tag triggers the versioned and `latest` publication.
 
 A sample dashboard can be found in the [examples](examples/dashboards/Media%20Server.json)
 

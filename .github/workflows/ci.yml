@@ -9,6 +9,13 @@ permissions:
   contents: read
 
 jobs:
+  docker-image-architecture:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: docker/setup-qemu-action@v4
+    - run: bash tools/test-docker-image-architecture.sh
+
   build:
     runs-on: ubuntu-latest
     strategy:
