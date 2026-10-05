@@ -82,6 +82,23 @@ func (s *sessions) Update(sessionID string, newState sessionState, newSession *p
 	defer s.mtx.Unlock()
 
 	ss := s.sessions[sessionID]
+	s.update(sessionID, ss, newState, newSession, media)
+}
+
+func (s *sessions) updateState(sessionID string, newState sessionState) bool {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	ss, ok := s.sessions[sessionID]
+	if !ok {
+		return false
+	}
+
+	s.update(sessionID, ss, newState, nil, nil)
+	return true
+}
+
+func (s *sessions) update(sessionID string, ss session, newState sessionState, newSession *plex.Metadata, media *plex.Metadata) {
 
 	if newSession != nil {
 		ss.session = *newSession

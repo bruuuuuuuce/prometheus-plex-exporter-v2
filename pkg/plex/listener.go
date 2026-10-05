@@ -190,13 +190,18 @@ func (l *plexListener) onPlaying(c plex.NotificationContainer) error {
 	for _, n := range c.PlaySessionStateNotification {
 		if sessionState(n.State) == stateStopped {
 			// When the session is stopped we can't look up the user info or media anymore.
-			l.activeSessions.Update(n.SessionKey, sessionState(n.State), nil, nil)
+			l.activeSessions.updateState(n.SessionKey, sessionState(n.State))
 			continue
 		}
 
 		session := getSessionByID(sessions, n.SessionKey)
 		if session == nil {
-			return fmt.Errorf("error getting session with key %s %+v", n.SessionKey, n)
+			if l.activeSessions.updateState(n.SessionKey, sessionState(n.State)) {
+				level.Debug(l.log).Log("msg", "updated cached session missing from Plex session snapshot", "sessionKey", n.SessionKey, "state", n.State)
+			} else {
+				level.Debug(l.log).Log("msg", "ignored session missing from Plex session snapshot", "sessionKey", n.SessionKey, "state", n.State)
+			}
+			continue
 		}
 
 		metadata, err := l.conn.GetMetadata(n.RatingKey)
