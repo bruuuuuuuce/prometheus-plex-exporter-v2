@@ -56,10 +56,7 @@ var ignoredNotificationTypes = map[string]struct{}{
 	"activity":                  {},
 	"backgroundProcessingQueue": {},
 	"preference":                {},
-	"progress":                  {},
-	"provider.content.change":   {},
 	"reachability":              {},
-	"status":                    {},
 	"transcode.end":             {},
 	"transcodeSession.end":      {},
 	"transcodeSession.start":    {},
@@ -156,7 +153,7 @@ func handleWebsocketNotification(message []byte, onPlaying func(plex.Notificatio
 		})
 	default:
 		if _, ok := ignoredNotificationTypes[eventType]; !ok {
-			level.Debug(log).Log("msg", "unknown websocket event name", "event", eventType)
+			level.Debug(log).Log("msg", "unclassified Plex websocket event", "event", eventType)
 		}
 	}
 

@@ -77,14 +77,16 @@ func TestPlayingNotificationIgnoresTimelineSectionIDEncoding(t *testing.T) {
 	}
 }
 
-func TestObservedWebsocketEventsAreIgnoredAndUnknownEventsRemainDebuggable(t *testing.T) {
+func TestUnclassifiedWebsocketEventsLogNamesWithoutPayloads(t *testing.T) {
 	playing := 0
+	const privateTitle = "private media title"
 	var logOutput bytes.Buffer
 	logger := level.NewFilter(kitlog.NewLogfmtLogger(&logOutput), level.AllowDebug())
 	for _, payload := range []string{
-		`{"NotificationContainer":{"type":"progress"}}`,
-		`{"NotificationContainer":{"type":"status"}}`,
-		`{"NotificationContainer":{"type":"provider.content.change"}}`,
+		`{"NotificationContainer":{"type":"reachability"}}`,
+		`{"NotificationContainer":{"type":"progress","ProgressNotification":[{"message":"private media title"}]}}`,
+		`{"NotificationContainer":{"type":"status","StatusNotification":[{"title":"private media title"}]}}`,
+		`{"NotificationContainer":{"type":"provider.content.change","Metadata":[{"title":"private media title"}]}}`,
 		`{"NotificationContainer":{"type":"playing "}}`,
 		`{"NotificationContainer":{"type":"future.event"}}`,
 	} {
@@ -97,11 +99,16 @@ func TestObservedWebsocketEventsAreIgnoredAndUnknownEventsRemainDebuggable(t *te
 	if playing != 1 {
 		t.Fatalf("playing callbacks = %d, want 1", playing)
 	}
-	if got := logOutput.String(); strings.Contains(got, "progress") || strings.Contains(got, "provider.content.change") || strings.Contains(got, "event=status") {
-		t.Errorf("recognized events were logged as unknown: %s", got)
+	for _, event := range []string{"progress", "status", "provider.content.change", "future.event"} {
+		if got := logOutput.String(); !strings.Contains(got, "event="+event) {
+			t.Errorf("event %q was not logged at debug level: %s", event, got)
+		}
 	}
-	if got := logOutput.String(); !strings.Contains(got, "event=future.event") {
-		t.Errorf("unexpected event was not logged at debug level: %s", got)
+	if got := logOutput.String(); strings.Contains(got, "event=reachability") {
+		t.Errorf("known unused event was logged: %s", got)
+	}
+	if got := logOutput.String(); strings.Contains(got, privateTitle) {
+		t.Errorf("private payload was logged: %s", got)
 	}
 }
 

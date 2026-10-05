@@ -12,7 +12,7 @@ Configure the exporter with these environment variables:
 
 ### Plex websocket notifications
 
-The Plex notifications websocket exposes event types beyond playback, and Plex does not publish a complete schema for them. The exporter intentionally ignores the observed `progress`, `status`, and `provider.content.change` event types; they are not inputs to playback metrics. Other unrecognized event types are logged at debug level and can be inspected with `LOG_LEVEL=debug`. Event names are trimmed before dispatch so surrounding whitespace does not prevent recognized events such as `playing` from being handled.
+The Plex notifications websocket exposes event types beyond playback, and Plex does not publish a complete schema for them. The exporter handles `playing` notifications for playback metrics. The observed `progress`, `status`, and `provider.content.change` events still need payload investigation ([issue #11](https://github.com/bruuuuuuuce/prometheus-plex-exporter-v2/issues/11)); their names, like other unclassified event names, are logged at debug level with `LOG_LEVEL=debug`. Payloads are never logged because they may contain user or media details. Event names are trimmed before dispatch so surrounding whitespace does not prevent recognized events such as `playing` from being handled.
 
 The text `&#x20;` is the HTML numeric character reference for a space (U+0020). It is not emitted as such by the websocket logger. Its appearance in copied/aggregated log output points to HTML escaping in a display or export step, but without the original raw log record or websocket payload the exact stage cannot be identified. Plex's websocket event API is undocumented, so event names alone do not establish the payload semantics.
 
