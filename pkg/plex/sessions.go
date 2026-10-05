@@ -90,7 +90,7 @@ func (s *sessions) updateState(sessionID string, newState sessionState) bool {
 	defer s.mtx.Unlock()
 
 	ss, ok := s.sessions[sessionID]
-	if !ok {
+	if !ok || ss.state == stateStopped {
 		return false
 	}
 

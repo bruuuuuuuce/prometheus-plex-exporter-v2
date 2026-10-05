@@ -12,28 +12,7 @@ import (
 func TestUpdateStateStopsPlaybackMetricsIncreasing(t *testing.T) {
 	for _, newState := range []sessionState{stateBuffering, statePaused} {
 		t.Run(string(newState), func(t *testing.T) {
-			server := &Server{Name: "test-server", ID: "test-server-id"}
-			server.libraries = []*Library{{Name: "Movies", ID: "1", Type: "movie"}}
-			activeSessions := &sessions{
-				sessions: map[string]session{},
-				server:   server,
-			}
-
-			activeSessions.Update("176", statePlaying, &plex.Metadata{
-				Media: []plex.Media{{
-					Bitrate:         1000,
-					VideoResolution: "1080",
-					Part:            []plex.Part{{Decision: "directplay"}},
-				}},
-				Player: plex.Player{Device: "test-device", Product: "test-player"},
-				User:   plex.User{Title: "test-user"},
-			}, &plex.Metadata{
-				LibrarySectionID: json.Number("1"),
-				Media:            []plex.Media{{VideoResolution: "1080"}},
-				RatingKey:        "3147",
-				Title:            "test-media",
-				Type:             "movie",
-			})
+			activeSessions := newTestActiveSessions()
 
 			time.Sleep(10 * time.Millisecond)
 			if updated := activeSessions.updateState("176", newState); !updated {
@@ -54,6 +33,57 @@ func TestUpdateStateStopsPlaybackMetricsIncreasing(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateStateDoesNotReviveStoppedSession(t *testing.T) {
+	for _, staleState := range []sessionState{stateBuffering, statePaused, statePlaying} {
+		t.Run(string(staleState), func(t *testing.T) {
+			activeSessions := newTestActiveSessions()
+			if updated := activeSessions.updateState("176", stateStopped); !updated {
+				t.Fatal("stopped updateState() = false, want true")
+			}
+			cached := activeSessions.sessions["176"]
+			cached.lastUpdate = time.Now().Add(-sessionTimeout - time.Second)
+			activeSessions.sessions["176"] = cached
+
+			if updated := activeSessions.updateState("176", staleState); updated {
+				t.Errorf("stale %s updateState() = true, want false", staleState)
+			}
+			if got := activeSessions.sessions["176"].state; got != stateStopped {
+				t.Errorf("state after stale %s = %q, want %q", staleState, got, stateStopped)
+			}
+
+			activeSessions.pruneOldSessions()
+			if _, ok := activeSessions.sessions["176"]; ok {
+				t.Errorf("session remained cached after stale %s notification", staleState)
+			}
+		})
+	}
+}
+
+func newTestActiveSessions() *sessions {
+	server := &Server{Name: "test-server", ID: "test-server-id"}
+	server.libraries = []*Library{{Name: "Movies", ID: "1", Type: "movie"}}
+	activeSessions := &sessions{
+		sessions: map[string]session{},
+		server:   server,
+	}
+	activeSessions.Update("176", statePlaying, &plex.Metadata{
+		Media: []plex.Media{{
+			Bitrate:         1000,
+			VideoResolution: "1080",
+			Part:            []plex.Part{{Decision: "directplay"}},
+		}},
+		Player: plex.Player{Device: "test-device", Product: "test-player"},
+		User:   plex.User{Title: "test-user"},
+	}, &plex.Metadata{
+		LibrarySectionID: json.Number("1"),
+		Media:            []plex.Media{{VideoResolution: "1080"}},
+		RatingKey:        "3147",
+		Title:            "test-media",
+		Type:             "movie",
+	})
+	return activeSessions
 }
 
 func gatherPlaybackMetrics(t *testing.T, collector prometheus.Collector) map[string]float64 {
