@@ -4,7 +4,15 @@ This file applies to the entire repository. Keep changes small, reviewable, and 
 
 ## Workflow
 
+- Do all work in a dedicated Git worktree and feature branch. Do not make
+  changes in the primary checkout.
 - Do not commit or push directly to `main`. Create a descriptive branch, then open a pull request for review.
+- Always write commit messages using Conventional Commits:
+  `<type>[optional scope]: <description>` (for example,
+  `docs: clarify installation` or `fix(config): handle missing values`).
+  Use an imperative, lowercase description without a trailing period. Common
+  types are `feat`, `fix`, `docs`, `test`, `refactor`, `ci`, and `chore`.
+  Mark breaking changes with `!` and explain them in a `BREAKING CHANGE:` footer.
 - Check `git status` before editing. Preserve unrelated changes and avoid destructive Git commands.
 - Describe the behavior changed, verification performed, and any compatibility or deployment impact in the pull request. Link the relevant issue.
 - Review the pull request diff and wait for required checks before merging. Request another reviewer when available.
