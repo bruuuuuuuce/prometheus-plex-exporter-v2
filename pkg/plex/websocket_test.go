@@ -1,22 +1,60 @@
-package plex_test
+package plex
 
 import (
 	"bytes"
-	"encoding/json"
+	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
+	plexclient "github.com/bruuuuuuuce/go-plex-client/v2"
 	kitlog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/websocket"
-	plexclient "github.com/jrudio/go-plex-client"
 )
 
-func TestTimelineSectionIDAcceptsNumberAndString(t *testing.T) {
+func TestWebsocketListenerUsesTokenWithoutLoggingPayload(t *testing.T) {
+	const privateTitle = "private media title"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/:/websockets/notifications" {
+			t.Errorf("websocket path = %q, want /:/websockets/notifications", got)
+		}
+		if got := r.Header.Get("X-Plex-Token"); got != "test-token" {
+			t.Errorf("X-Plex-Token = %q, want test-token", got)
+		}
+
+		conn, err := websocket.Upgrade(w, r, nil, 1024, 1024)
+		if err != nil {
+			t.Errorf("upgrade websocket: %v", err)
+			return
+		}
+		defer conn.Close()
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"NotificationContainer":{"type":"future.event","title":"`+privateTitle+`"}}`)); err != nil {
+			t.Errorf("write websocket notification: %v", err)
+			return
+		}
+		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+	}))
+	defer server.Close()
+
+	var logOutput bytes.Buffer
+	logger := level.NewFilter(kitlog.NewLogfmtLogger(&logOutput), level.AllowDebug())
+	listener := plexListener{
+		server: &Server{},
+		conn:   &plexclient.Plex{URL: server.URL, Token: "test-token"},
+		log:    logger,
+	}
+	if err := listener.listen(context.Background()); err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	if got := logOutput.String(); strings.Contains(got, privateTitle) {
+		t.Errorf("private payload was logged: %s", got)
+	}
+}
+
+func TestPlayingNotificationIgnoresTimelineSectionIDEncoding(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		sectionID string
@@ -26,86 +64,63 @@ func TestTimelineSectionIDAcceptsNumberAndString(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload := `{"NotificationContainer":{"type":"playing","TimelineEntry":[{"sectionID":` + tc.sectionID + `,"title":"Library"}],"PlaySessionStateNotification":[{"sessionKey":"abc","state":"playing"}]}}`
-			var notification plexclient.WebsocketNotification
-			if err := json.Unmarshal([]byte(payload), &notification); err != nil {
-				t.Fatalf("decode notification: %v", err)
+			var got plexclient.NotificationContainer
+			if err := handleWebsocketNotification([]byte(payload), func(notification plexclient.NotificationContainer) {
+				got = notification
+			}, kitlog.NewNopLogger()); err != nil {
+				t.Fatalf("handle notification: %v", err)
 			}
-			if got := notification.TimelineEntry[0].SectionID; got != 12 {
-				t.Errorf("sectionID = %d, want 12", got)
-			}
-			if got := notification.TimelineEntry[0].Title; got != "Library" {
-				t.Errorf("title = %q, want Library", got)
-			}
-			if got := notification.PlaySessionStateNotification[0].SessionKey; got != "abc" {
+			if got := got.PlaySessionStateNotification[0].SessionKey; got != "abc" {
 				t.Errorf("playing session key = %q, want abc", got)
 			}
 		})
 	}
 }
 
-func TestObservedWebsocketEventsAreIgnoredAndUnknownEventsRemainDebuggable(t *testing.T) {
-	playing := make(chan struct{}, 1)
+func TestUnclassifiedWebsocketEventsLogNamesWithoutPayloads(t *testing.T) {
+	playing := 0
+	const privateTitle = "private media title"
 	var logOutput bytes.Buffer
 	logger := level.NewFilter(kitlog.NewLogfmtLogger(&logOutput), level.AllowDebug())
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Upgrade(w, r, nil, 1024, 1024)
-		if err != nil {
-			t.Errorf("upgrade websocket: %v", err)
-			return
+	for _, payload := range []string{
+		`{"NotificationContainer":{"type":"reachability"}}`,
+		`{"NotificationContainer":{"type":"progress","ProgressNotification":[{"message":"private media title"}]}}`,
+		`{"NotificationContainer":{"type":"status","StatusNotification":[{"title":"private media title"}]}}`,
+		`{"NotificationContainer":{"type":"provider.content.change","Metadata":[{"title":"private media title"}]}}`,
+		`{"NotificationContainer":{"type":"playing "}}`,
+		`{"NotificationContainer":{"type":"future.event"}}`,
+	} {
+		if err := handleWebsocketNotification([]byte(payload), func(plexclient.NotificationContainer) {
+			playing++
+		}, logger); err != nil {
+			t.Fatalf("handle notification: %v", err)
 		}
-		defer conn.Close()
-		for _, payload := range []string{
-			`{"NotificationContainer":{"type":"progress"}}`,
-			`{"NotificationContainer":{"type":"status"}}`,
-			`{"NotificationContainer":{"type":"provider.content.change"}}`,
-			`{"NotificationContainer":{"type":"playing "}}`,
-			`{"NotificationContainer":{"type":"future.event"}}`,
-		} {
-			if err := conn.WriteMessage(websocket.TextMessage, []byte(payload)); err != nil {
-				t.Errorf("write websocket notification: %v", err)
-				return
-			}
+	}
+	if playing != 1 {
+		t.Fatalf("playing callbacks = %d, want 1", playing)
+	}
+	for _, event := range []string{"progress", "status", "provider.content.change", "future.event"} {
+		if got := logOutput.String(); !strings.Contains(got, "event="+event) {
+			t.Errorf("event %q was not logged at debug level: %s", event, got)
 		}
-		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
-	}))
-	defer server.Close()
-
-	client := &plexclient.Plex{URL: server.URL}
-	interrupt := make(chan os.Signal)
-	finished := make(chan struct{}, 1)
-	events := plexclient.NewNotificationEvents()
-	events.OnPlaying(func(plexclient.NotificationContainer) { playing <- struct{}{} })
-	client.SubscribeToNotificationsWithLogger(events, interrupt, func(error) { finished <- struct{}{} }, logger)
-
-	select {
-	case <-playing:
-	case <-time.After(2 * time.Second):
-		t.Fatal("playing event with trailing whitespace was not dispatched")
 	}
-	select {
-	case <-finished:
-	case <-time.After(2 * time.Second):
-		t.Fatal("websocket did not finish after test notifications")
+	if got := logOutput.String(); strings.Contains(got, "event=reachability") {
+		t.Errorf("known unused event was logged: %s", got)
 	}
-	if got := logOutput.String(); strings.Contains(got, "progress") || strings.Contains(got, "provider.content.change") || strings.Contains(got, "event=status") {
-		t.Errorf("recognized events were logged as unknown: %s", got)
+	if got := logOutput.String(); strings.Contains(got, privateTitle) {
+		t.Errorf("private payload was logged: %s", got)
 	}
-	if got := logOutput.String(); !strings.Contains(got, "event=future.event") {
-		t.Errorf("unexpected event was not logged at debug level: %s", got)
-	}
-	close(interrupt)
 }
 
 func TestInvalidTimelineSectionIDPreservesPlayingNotification(t *testing.T) {
-	var notification plexclient.WebsocketNotification
 	payload := `{"NotificationContainer":{"type":"playing","TimelineEntry":[{"sectionID":"not-a-number"}],"PlaySessionStateNotification":[{"sessionKey":"abc","state":"playing"}]}}`
-	if err := json.Unmarshal([]byte(payload), &notification); err != nil {
-		t.Fatalf("decode notification: %v", err)
+	var got plexclient.NotificationContainer
+	if err := handleWebsocketNotification([]byte(payload), func(notification plexclient.NotificationContainer) {
+		got = notification
+	}, kitlog.NewNopLogger()); err != nil {
+		t.Fatalf("handle notification: %v", err)
 	}
-	if got := notification.TimelineEntry[0].SectionID; got != 0 {
-		t.Errorf("invalid sectionID = %d, want 0", got)
-	}
-	if got := notification.PlaySessionStateNotification[0].SessionKey; got != "abc" {
+	if got := got.PlaySessionStateNotification[0].SessionKey; got != "abc" {
 		t.Errorf("playing session key = %q, want abc", got)
 	}
 }
